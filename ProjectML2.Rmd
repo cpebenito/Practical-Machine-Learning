@@ -1,0 +1,232 @@
+---
+title: "Practical Machine Problem Project2"
+author: "cpebenito"
+date: "Sunday, July 26, 2015"
+output: html_document
+---
+
+
+***Overview***
+The goal of this project is to predict the manner in which the participants did the exercise in the  "Qualitative Activity Recognition of Weight Lifting Exercises" project conducted by a group of quantified self-movenment enthusiasts. The original work is available from the website: http://groupware.les.inf.puc-rio.br/har (see the section on the Weight Lifting Exercise Dataset). 
+
+The training data for this project is available here: 
+
+https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv
+
+The final outcome in this project is a report describing how I built the model, how I used cross validation, what the out of sample error is, and why I made the choices I did. The final Model will also be use to predict 20 different test cases found on the test data available here: 
+
+https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv. 
+
+
+***Loading Data in R***
+```{r}
+setwd("~/R/Machine Learning")
+moveTrain <- read.csv("pml-training.csv")
+head(moveTrain)
+##summary(moveTrain)
+str(moveTrain)
+##tail(moveTrain)
+
+```
+
+***Loading the needed Packages***
+```{r, echo=FALSE}
+if (!require(caret)) {
+    install.packages("caret", repos="http://cran.us.r-project.org")
+    require(caret)
+}
+library(caret)
+#install.packages("doParallel")
+#library(doParallel)
+#registerDoParallel(cores=2)
+
+if (!require(ggplot2)) {
+    install.packages("ggplot2", repos="http://cran.us.r-project.org")
+    require(ggplot2)
+}
+library(ggplot2)
+
+
+
+```
+
+
+***Removing unwanted Covariates***
+
+1. I used the nearZeroVar() function to identify and remove near zero-variance variables 
+```{r}
+nzv <- nearZeroVar(moveTrain, saveMetrics=TRUE)
+
+
+nzv<-nearZeroVar(moveTrain)
+moveFiltered <- moveTrain[, -nzv]
+summary(moveFiltered)
+
+moveFiltered2 <- moveFiltered[,-c(3:5, 11:26, 40, 50:53, 57:62, 64:73, 86:88, 90), drop=FALSE]
+
+colSums(moveFiltered2[,-c(2,56)])
+
+summary(moveFiltered2)
+
+moveTraining <- moveFiltered2
+str(moveTraining)
+
+moveTraining2 <- moveTraining
+
+```
+
+2. After taking out near zero variances, I used the findCorrelation() function to flag covariates with high correlation suggested for removal based on the 0.75 correlation cut-off that I have set. The 2 summaries below should show the change in the correlation quantiles:
+```{r, echo=FALSE}
+moveCor <- cor(moveTraining2[,-c(2,56)])
+summary(moveCor[upper.tri(moveCor)])
+
+highlyCor <- findCorrelation(moveCor, cutoff = .75)
+moveTraining2 <- moveTraining2[,-highlyCor]
+
+moveCor2 <- cor(moveTraining2[,-c(2,36)])
+summary(moveCor2[upper.tri(moveCor2)])
+
+```
+
+***TRAINING the model through Random Sub-Sampling as a method of Cross-Validation*** 
+```{r }
+inTrain <- createDataPartition(y=moveTraining2$classe, p=0.7, list=FALSE)
+training <- moveTraining2[inTrain,]
+testing <- moveTraining2[-inTrain,]
+dim(training); dim(testing)
+
+```
+
+Verifying for NAs
+```{r}
+colSums(is.na(training))
+summary(training)
+
+```
+
+
+Creating the Model
+```{r, results='hide'}
+library(gbm)
+set.seed(444)
+modelFit4 <- train(training$classe ~ .,method="gbm",preProcess="pca",data=training)
+
+saveRDS(modelFit4, file="modelFit4.rds")
+
+```
+
+```{r}
+print(modelFit4)
+```
+
+***Determining IN and OUT-OF-SAMPLE errors***
+
+1. Confusion Matrix after applying the Model on the Training set (**In Sample Errors**)
+```{r}
+confusionMatrix(training$classe,predict(modelFit4,training))
+
+```
+
+
+2. Confusion Matrix after applying the Model on the Sub-Testing set (**Out-Of-Sample Errors**)
+```{r}
+confusionMatrix(testing$classe,predict(modelFit4,testing))
+
+```
+
+
+
+Sample plots after nzv and removing highly corr variables in the Training set. This is just to show that the selected covariates have high correlation with the outcome(classe) variable, but lesser correlation with other covariates, which can benefit the model from reducing the level of correlation between the predictors.
+
+
+```{r, echo=FALSE}
+featurePlot(x=training$classe, y=training[,(30:36)], plot="pairs")
+featurePlot(x=training$classe, y=training[,c(20:22,36)], plot="pairs")
+
+```
+
+
+***TESTING the model*** 
+
+Loading the Testing File
+```{r}
+###loading the original Testing file
+moveTest <- read.csv("pml-testing.csv")
+summary(moveTest)
+
+```
+
+Reducing the Covariates of the Testing set by applying the same process applied to the Training set:
+```{r}
+###reducing the predictors 
+nzv<-nearZeroVar(moveTest)
+moveFiltered2 <- moveTest[, -nzv]
+summary(moveFiltered2)
+
+
+###determining the names of the selected covariates from the Training set
+names(moveTraining2)
+
+moveTesting2 <- moveFiltered2[, c("X", "user_name", "pitch_belt", 
+                                  "total_accel_belt", "gyros_belt_x",
+                                  "gyros_belt_y", "accel_belt_z","magnet_belt_y",
+                                  "magnet_belt_z", "roll_arm", "pitch_arm",
+                                  "yaw_arm", "total_accel_arm", "gyros_arm_y",
+                                  "accel_arm_z", "magnet_arm_y", "magnet_arm_z",
+                                  "roll_dumbbell", "pitch_dumbbell", 
+                                  "yaw_dumbbell", "gyros_dumbbell_x", 
+                                  "gyros_dumbbell_y", "magnet_dumbbell_y", 
+                                  "magnet_dumbbell_z",
+                                  "roll_forearm", "pitch_forearm", "yaw_forearm",
+                                  "total_accel_forearm", "gyros_forearm_x", 
+                                  "gyros_forearm_z",
+                                  "accel_forearm_y", "accel_forearm_z", 
+                                  "magnet_forearm_x",
+                                  "magnet_forearm_y", "magnet_forearm_z", 
+                                  "problem_id")] 
+```
+
+Checking if Covariates on Training and Test Set are the same
+```{r}
+names(moveTesting2)
+names(training)
+
+all.equal(names(moveTesting2[,-36]),names(training[,-36]))
+
+```
+
+
+***Final Testing File and Plot with updated Classe***
+```{r}
+Testing_classe <-  as.data.frame(predict(modelFit4,moveTesting2))
+colnames(Testing_classe) <- c('classe')
+TestingFinal <- moveTesting2
+TestingFinal<- cbind(TestingFinal,Testing_classe)
+
+answers <- predict(modelFit4,moveTesting2)
+
+#pml_write_files = function(x){  
+#  n = length(x) 
+#  for(i in 1:n){
+#    filename = paste0("problem_id_",i,".txt")
+#    write.table(x[i],file=filename,quote=FALSE,row.names=FALSE,col.names=FALSE)
+#  }
+#}
+
+#pml_write_files(answers)
+qplot(predict(modelFit4,moveTesting2), problem_id, data=moveTesting2)
+
+```
+
+
+***Conclusion***
+After analyzing the data provided and applying what I have learned so far in this Data Science Specialization Course, I was able to use the Machine Learning principles in predicting the "classe" on how the participants did their exercise as shown on the Testing Set. 
+
+Based on the results of this project, most of the participants performed the exercises based on the specified execution of the exercise (Class A), while only  4 participants did a mistake by throwing the elbows to the front (Class B). It can also be worth mentioning that the participants in the Testing set avoided the 3 other most common mistakes in this experiment, which are: lifting the dumbbell only halfway (Class C), lowering the dumbbell only halfway (Class D) and throwing the hips to the front (Class E).
+
+This proves that the Machine Learning algorithm the original contributor used in creating this Human Activity Recognition project helped the participants performed the activities correctly.
+
+
+```{r}
+sessionInfo()
+```
